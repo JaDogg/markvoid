@@ -696,6 +696,93 @@
       return;
     }
 
+    // Ctrl+G — go to line
+    if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
+      e.preventDefault();
+      app.openGoToLine();
+      return;
+    }
+
+    // Ctrl+Shift+X — strikethrough
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'X') {
+      e.preventDefault();
+      app.toggleStrike();
+      return;
+    }
+
+    // Ctrl+` — inline code
+    if ((e.ctrlKey || e.metaKey) && e.key === '`') {
+      e.preventDefault();
+      app.toggleInlineCode();
+      return;
+    }
+
+    // Ctrl+Shift+V — paste as plain text
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'V') {
+      e.preventDefault();
+      navigator.clipboard?.readText().then(text => {
+        if (!text) return;
+        const pos = raw.selectionStart;
+        const end = raw.selectionEnd;
+        const newVal = raw.value.slice(0, pos) + text + raw.value.slice(end);
+        raw.value = newVal;
+        raw.setSelectionRange(pos + text.length, pos + text.length);
+        lines[idx] = newVal;
+        raw.style.height = 'auto';
+        raw.style.height = raw.scrollHeight + 'px';
+        computeFenceStates();
+        updateRendered(idx);
+        scheduleAutosave();
+        pushUndo();
+      }).catch(() => {});
+      return;
+    }
+
+    // Auto-pair: ( [ { " ' `
+    const PAIRS = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'", '`': '`' };
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && PAIRS[e.key]) {
+      const selStart = raw.selectionStart;
+      const selEnd   = raw.selectionEnd;
+      const selected = raw.value.slice(selStart, selEnd);
+      // If something is selected, wrap it; otherwise just insert pair
+      if (selected.length > 0) {
+        e.preventDefault();
+        const newVal = raw.value.slice(0, selStart) + e.key + selected + PAIRS[e.key] + raw.value.slice(selEnd);
+        raw.value = newVal;
+        raw.setSelectionRange(selStart + 1, selEnd + 1);
+        lines[idx] = newVal;
+        computeFenceStates();
+        updateRendered(idx);
+        scheduleAutosave();
+        return;
+      } else {
+        // Only auto-pair if next char is not alphanumeric
+        const nextChar = raw.value[selStart];
+        if (!nextChar || /[\s\)\]\}\,\.\;\:]/.test(nextChar)) {
+          e.preventDefault();
+          const newVal = raw.value.slice(0, selStart) + e.key + PAIRS[e.key] + raw.value.slice(selStart);
+          raw.value = newVal;
+          raw.setSelectionRange(selStart + 1, selStart + 1);
+          lines[idx] = newVal;
+          computeFenceStates();
+          updateRendered(idx);
+          scheduleAutosave();
+          return;
+        }
+      }
+    }
+
+    // Skip over closing pair if already there
+    const CLOSE_CHARS = new Set([')', ']', '}']);
+    if (!e.ctrlKey && !e.metaKey && CLOSE_CHARS.has(e.key)) {
+      const pos = raw.selectionStart;
+      if (raw.value[pos] === e.key && raw.selectionStart === raw.selectionEnd) {
+        e.preventDefault();
+        raw.setSelectionRange(pos + 1, pos + 1);
+        return;
+      }
+    }
+
     // Ctrl+A — select all document text
     if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
       e.preventDefault();
@@ -1775,6 +1862,77 @@
       window.notes.switchTo(id);
     },
 
+    toggleStrike()     { app._wrapSelection('~~', '~~'); },
+    toggleInlineCode() { app._wrapSelection('`', '`'); },
+
+    // ── GO TO LINE ──────────────────────────────────────────────
+    openGoToLine() {
+      document.getElementById('goto-modal').classList.remove('hidden');
+      document.getElementById('modal-overlay').classList.remove('hidden');
+      const inp = document.getElementById('goto-input');
+      inp.value = activeLineIdx + 1;
+      requestAnimationFrame(() => { inp.focus(); inp.select(); });
+    },
+
+    closeGoToLine() {
+      document.getElementById('goto-modal').classList.add('hidden');
+      document.getElementById('modal-overlay').classList.add('hidden');
+    },
+
+    commitGoToLine() {
+      const n = parseInt(document.getElementById('goto-input').value);
+      app.closeGoToLine();
+      if (isNaN(n)) return;
+      const idx = Math.max(0, Math.min(lines.length - 1, n - 1));
+      switchToRendered(activeLineIdx);
+      switchToRaw(idx);
+      // Scroll the line into view
+      requestAnimationFrame(() => {
+        getLineEl(idx)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    },
+
+    // ── INSERT TABLE ────────────────────────────────────────────
+    insertTable() {
+      document.getElementById('table-modal').classList.remove('hidden');
+      document.getElementById('modal-overlay').classList.remove('hidden');
+      requestAnimationFrame(() => document.getElementById('table-cols').focus());
+    },
+
+    closeTableModal() {
+      document.getElementById('table-modal').classList.add('hidden');
+      document.getElementById('modal-overlay').classList.add('hidden');
+    },
+
+    commitInsertTable() {
+      const cols = Math.max(1, Math.min(12, parseInt(document.getElementById('table-cols').value) || 3));
+      const rows = Math.max(1, Math.min(50, parseInt(document.getElementById('table-rows').value) || 3));
+      app.closeTableModal();
+
+      const sep = '|' + Array(cols).fill(' --- ').join('|') + '|';
+      const headerCells = Array.from({length: cols}, (_, i) => ` Col ${i+1} `).join('|');
+      const header = `|${headerCells}|`;
+      const dataRow = '|' + Array(cols).fill('      ').join('|') + '|';
+
+      const tableLines = [header, sep, ...Array(rows).fill(dataRow)];
+      lines.splice(activeLineIdx + 1, 0, ...tableLines);
+      rebuildFromIndex(activeLineIdx + 1);
+      requestAnimationFrame(() => switchToRaw(activeLineIdx + 1));
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── SIDEBAR TOGGLE ──────────────────────────────────────────
+    toggleSidebar() {
+      const collapsed = document.body.classList.toggle('sidebar-collapsed');
+      const btn = document.getElementById('sidebar-collapse');
+      btn.textContent = collapsed ? '▶' : '◀';
+      try { localStorage.setItem('mv_sidebar_collapsed', collapsed ? '1' : '0'); } catch (_) {}
+    },
+
+    // ── PASTE AS PLAIN TEXT ─────────────────────────────────────
+    // Handled via keydown below
+
     // ── PRINT ───────────────────────────────────────────────────
     printNote() {
       // Ensure all lines are rendered (not in raw edit mode)
@@ -2100,7 +2258,28 @@ ${bodyHtml}
       document.getElementById('editor-pane').scrollTop = 999999;
     }
 
-    // Enter in link modal commits it
+    if ((e.ctrlKey || e.metaKey) && e.key === 'g' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.openGoToLine();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+      e.preventDefault(); app.openNoteSearch();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'X' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.toggleStrike();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === '`' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.toggleInlineCode();
+    }
+
+    // Enter in goto modal
+    if (e.key === 'Enter' && e.target.id === 'goto-input') {
+      e.preventDefault(); app.commitGoToLine();
+    }
+    // Enter in table modal
+    if (e.key === 'Enter' && e.target.closest('#table-modal')) {
+      e.preventDefault(); app.commitInsertTable();
+    }
+    // Enter in link modal
     if (e.key === 'Enter' && e.target.closest('#link-modal')) {
       e.preventDefault(); app.commitLink();
     }
@@ -2188,10 +2367,7 @@ ${bodyHtml}
     }
 
     if (e.key === 'Escape') {
-      app.closeFind();
-      app.closeStats();
-      app.closeNoteSearch();
-      app.closeLink();
+      app.closeAllModals();
       crossLineSelActive = false;
       ksel = null;
       if (document.body.classList.contains('zen')) app.toggleZen();
@@ -2326,6 +2502,33 @@ ${bodyHtml}
       requestAnimationFrame(() => this.startRename(id));
     },
 
+    // ── Duplicate a note ─────────────────────────────────────────
+    duplicateNote(id) {
+      const orig = this.index.notes.find(n => n.id === id);
+      if (!orig) return;
+      const content = this.loadNoteContent(id);
+      const newId = this.genId();
+      let name = orig.name + ' Copy';
+      const existing = this.index.notes.map(n => n.name);
+      let count = 2;
+      while (existing.includes(name)) name = orig.name + ' Copy ' + count++;
+      const origIdx = this.index.notes.findIndex(n => n.id === id);
+      this.index.notes.splice(origIdx + 1, 0, { id: newId, name });
+      this.saveNoteContent(newId, content);
+      this.saveIndex();
+      this.renderList();
+    },
+
+    // ── Pin / unpin a note ───────────────────────────────────────
+    togglePin(id) {
+      if (!this.index.pinned) this.index.pinned = [];
+      const i = this.index.pinned.indexOf(id);
+      if (i === -1) this.index.pinned.push(id);
+      else this.index.pinned.splice(i, 1);
+      this.saveIndex();
+      this.renderList();
+    },
+
     // ── Delete a note ────────────────────────────────────────
     deleteNote(id) {
       const entry = this.index.notes.find(n => n.id === id);
@@ -2410,11 +2613,32 @@ ${bodyHtml}
       if (!list) return;
       list.innerHTML = '';
 
-      this.index.notes.forEach(({ id, name }) => {
+      // Sort: pinned notes first
+      const pinned = this.index.pinned || [];
+      const sorted = [
+        ...this.index.notes.filter(n => pinned.includes(n.id)),
+        ...this.index.notes.filter(n => !pinned.includes(n.id))
+      ];
+
+      sorted.forEach(({ id, name }) => {
         const row = document.createElement('div');
-        row.className = 'note-entry' + (id === this.index.activeId ? ' active' : '');
+        const isPinned = pinned.includes(id);
+        row.className = 'note-entry' + (id === this.index.activeId ? ' active' : '') + (isPinned ? ' pinned' : '');
         row.dataset.id = id;
         row.draggable = true;
+
+        // Last modified tooltip
+        try {
+          const stored = localStorage.getItem(NOTE_KEY(id));
+          if (stored) {
+            const data = JSON.parse(stored);
+            if (data.lastSaved) {
+              const d = new Date(data.lastSaved);
+              const pad = n => String(n).padStart(2, '0');
+              row.dataset.modified = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            }
+          }
+        } catch (_) {}
 
         const icon = document.createElement('div');
         icon.className = 'note-icon';
@@ -2434,13 +2658,27 @@ ${bodyHtml}
         renameBtn.title = 'Rename';
         renameBtn.addEventListener('click', (e) => { e.stopPropagation(); this.startRename(id); });
 
+        const dupBtn = document.createElement('button');
+        dupBtn.className = 'note-btn dup';
+        dupBtn.textContent = '⧉';
+        dupBtn.title = 'Duplicate note';
+        dupBtn.addEventListener('click', (e) => { e.stopPropagation(); this.duplicateNote(id); });
+
+        const pinBtn = document.createElement('button');
+        pinBtn.className = 'note-btn';
+        pinBtn.textContent = this.index.pinned?.includes(id) ? '★' : '☆';
+        pinBtn.title = 'Pin/unpin';
+        pinBtn.addEventListener('click', (e) => { e.stopPropagation(); this.togglePin(id); });
+
         const delBtn = document.createElement('button');
         delBtn.className = 'note-btn del';
         delBtn.textContent = '✕';
         delBtn.title = 'Delete';
         delBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deleteNote(id); });
 
+        actions.appendChild(pinBtn);
         actions.appendChild(renameBtn);
+        actions.appendChild(dupBtn);
         actions.appendChild(delBtn);
 
         row.appendChild(icon);
@@ -2584,6 +2822,15 @@ ${bodyHtml}
     try {
       const theme = localStorage.getItem('mv_theme');
       if (theme) app.setTheme(theme, true);
+    } catch (_) {}
+
+    // Restore sidebar collapsed state
+    try {
+      if (localStorage.getItem('mv_sidebar_collapsed') === '1') {
+        document.body.classList.add('sidebar-collapsed');
+        const btn = document.getElementById('sidebar-collapse');
+        if (btn) btn.textContent = '▶';
+      }
     } catch (_) {}
 
     // Restore word wrap

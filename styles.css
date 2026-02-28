@@ -1440,3 +1440,92 @@ body.no-line-numbers .line-gutter {
   .line-rendered h1, .line-rendered h2, .line-rendered h3 { color: black !important; text-shadow: none !important; }
   .fence-top, .fence-mid, .fence-bottom { background: #f5f5f5 !important; border-color: #ccc !important; }
 }
+
+/* ============================================================
+   FEATURES ROUND 3
+   ============================================================ */
+
+/* Sidebar collapse button */
+#sidebar-collapse {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 48px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: none;
+  color: var(--fg-dim);
+  font-size: 9px;
+  cursor: pointer;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  border-radius: 0 3px 3px 0;
+  padding: 0;
+  font-family: var(--font-ui);
+}
+
+#sidebar-collapse:hover {
+  color: var(--accent);
+  background: var(--line-gutter);
+}
+
+#body-wrap {
+  position: relative;
+}
+
+/* Collapsed sidebar */
+body.sidebar-collapsed #sidebar,
+body.sidebar-collapsed #sidebar-resize {
+  display: none;
+}
+
+body.sidebar-collapsed #sidebar-collapse {
+  content: '▶';
+}
+
+/* Narrow modal variant */
+.modal-box--narrow {
+  max-width: 320px;
+}
+
+/* Note pinned indicator */
+.note-entry.pinned .note-icon {
+  color: var(--accent);
+}
+
+.note-entry.pinned {
+  border-left-color: var(--accent2) !important;
+}
+
+/* Note last-modified tooltip */
+.note-entry[data-modified]:hover::after {
+  content: attr(data-modified);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--modal-bg);
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 10px;
+  padding: 3px 8px;
+  white-space: nowrap;
+  z-index: 100;
+  pointer-events: none;
+  letter-spacing: 0.5px;
+}
+
+/* Auto-pair flash */
+@keyframes pair-flash {
+  0%   { background: var(--selection); }
+  100% { background: transparent; }
+}
+
+/* Duplicate note button */
+.note-btn.dup { font-size: 12px; }
+
