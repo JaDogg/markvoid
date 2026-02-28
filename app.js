@@ -1397,7 +1397,7 @@
     // ── EXPORT HTML ─────────────────────────────────────────────
     exportHtml() {
       const fullMd = lines.join('\n');
-      const bodyHtml = md.render(fullMd);
+      const bodyHtml = md.render(fullMd).replace(/<!--[\s\S]*?-->/g, '');
       const theme = document.body.getAttribute('data-theme') || 'retro-neon';
       const noteName = (window.notes?.index?.notes?.find(n => n.id === window.notes?.index?.activeId)?.name) || 'document';
 
@@ -1463,13 +1463,22 @@ ${bodyHtml}
       document.documentElement.setAttribute('data-theme', theme);
       document.body.setAttribute('data-theme', theme);
 
-      // Swap hljs theme
-      const hljsLink = document.getElementById('hljs-theme');
-      if (theme === 'white') {
-        hljsLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
-      } else {
-        hljsLink.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css';
-      }
+      // Map themes to best-matching hljs stylesheets
+      const hljsMap = {
+        'white':     'github',
+        'sepia':     'github',
+        'solarized': 'base16/solarized-dark',
+        'dracula':   'base16/dracula',
+        'nord':      'base16/nord',
+        'ocean':     'base16/ocean',
+        'amber':     'base16/monokai',
+        'retro-neon':'atom-one-dark',
+        'black':     'atom-one-dark',
+        'red':       'base16/monokai',
+      };
+      const hljsTheme = hljsMap[theme] || 'atom-one-dark';
+      document.getElementById('hljs-theme').href =
+        `https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/${hljsTheme}.min.css`;
 
       if (!silent) saveDocument();
     }

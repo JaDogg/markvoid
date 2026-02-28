@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" fill="#080808"/>
+  <!-- Three text lines -->
+  <rect x="7" y="8" width="14" height="2" rx="1" fill="#39ff14" opacity="0.9"/>
+  <rect x="7" y="13" width="18" height="2" rx="1" fill="#39ff14" opacity="0.6"/>
+  <rect x="7" y="18" width="10" height="2" rx="1" fill="#39ff14" opacity="0.4"/>
+  <!-- Cursor block -->
+  <rect x="7" y="23" width="3" height="2" rx="0.5" fill="#39ff14">
+    <animate attributeName="opacity" values="1;0;1" dur="1.1s" repeatCount="indefinite"/>
+  </rect>
+</svg>
