@@ -42,6 +42,10 @@
           <button onclick="app.moveLineUp()">Move Line Up <span class="kbd">Alt+↑</span></button>
           <button onclick="app.moveLineDown()">Move Line Down <span class="kbd">Alt+↓</span></button>
           <button onclick="app.toggleComment()">Toggle Comment <span class="kbd">Ctrl+/</span></button>
+          <div class="dropdown-sep"></div>
+          <button onclick="app.toggleBold()">Bold <span class="kbd">Ctrl+B</span></button>
+          <button onclick="app.toggleItalic()">Italic <span class="kbd">Ctrl+I</span></button>
+          <button onclick="app.insertLink()">Insert Link <span class="kbd">Ctrl+K</span></button>
         </div>
       </div>
 
@@ -49,15 +53,21 @@
         <button class="menu-trigger">Tools</button>
         <div class="dropdown">
           <button onclick="app.bulletify()">Bulletify</button>
+          <button onclick="app.insertTaskList()">Insert Task List</button>
           <button onclick="app.indentLines()">Indent <span class="kbd">Ctrl+]</span></button>
           <button onclick="app.outdentLines()">Outdent <span class="kbd">Ctrl+[</span></button>
           <button onclick="app.sortLines()">Sort Lines</button>
           <div class="dropdown-sep"></div>
           <button onclick="app.insertTOC()">Insert Table of Contents</button>
+          <button onclick="app.insertTimestamp()">Insert Timestamp</button>
           <button onclick="app.unicodeToAscii()">Unicode → ASCII</button>
           <div class="dropdown-sep"></div>
+          <button onclick="app.copyAsHtml()">Copy as HTML</button>
           <button onclick="app.showStats()">Word Count &amp; Stats</button>
           <button onclick="app.toggleWordWrap()">Toggle Word Wrap <span class="kbd">Alt+Z</span></button>
+          <button onclick="app.toggleLineNumbers()">Toggle Line Numbers</button>
+          <div class="dropdown-sep"></div>
+          <button onclick="app.printNote()">Print <span class="kbd">Ctrl+P</span></button>
         </div>
       </div>
 
@@ -89,6 +99,7 @@
   <aside id="sidebar">
     <div id="sidebar-header">
       <span id="sidebar-title">NOTES</span>
+      <button id="btn-search-notes" title="Search notes" onclick="app.openNoteSearch()">⌕</button>
       <button id="btn-new-note" title="New note" onclick="notes.createNote()">＋</button>
     </div>
     <div id="notes-list"></div>
@@ -110,6 +121,12 @@
     <span id="status-words">0 words</span>
     <span id="status-lines">0 lines</span>
     <span id="status-wrap" style="margin-left:auto">WRAP: OFF</span>
+    <span class="status-sep">|</span>
+    <span id="font-controls">
+      <button class="font-btn" onclick="app.changeFontSize(-1)" title="Decrease font size">A−</button>
+      <span id="font-size-display">14px</span>
+      <button class="font-btn" onclick="app.changeFontSize(1)" title="Increase font size">A+</button>
+    </span>
   </footer>
 
   <!-- HIDDEN FILE INPUT -->
@@ -152,6 +169,47 @@
         <button class="modal-close" onclick="app.closeStats()">✕</button>
       </div>
       <div class="modal-body" id="stats-body"></div>
+    </div>
+  </div>
+
+  <!-- NOTE SEARCH MODAL -->
+  <div id="note-search-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title">SEARCH NOTES</span>
+        <button class="modal-close" onclick="app.closeNoteSearch()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-row">
+          <label>Search</label>
+          <input type="text" id="note-search-input" placeholder="Search across all notes…" oninput="app.doNoteSearch()">
+        </div>
+        <div id="note-search-results"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INSERT LINK MODAL -->
+  <div id="link-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title">INSERT LINK</span>
+        <button class="modal-close" onclick="app.closeLink()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-row">
+          <label>Text</label>
+          <input type="text" id="link-text" placeholder="Link text">
+        </div>
+        <div class="field-row">
+          <label>URL</label>
+          <input type="text" id="link-url" placeholder="https://…">
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="app.commitLink()">Insert</button>
+          <button class="btn-secondary" onclick="app.closeLink()">Cancel</button>
+        </div>
+      </div>
     </div>
   </div>
 

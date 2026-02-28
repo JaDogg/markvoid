@@ -128,6 +128,17 @@
     }
     // Normal markdown line
     if (!raw.trim()) return '';
+    // Task list special render
+    const taskMatch = raw.match(/^(\s*[-*+]\s)\[([ x])\]\s(.*)$/);
+    if (taskMatch) {
+      const checked = taskMatch[2] === 'x';
+      const text = taskMatch[3];
+      const renderedText = md.renderInline(text);
+      return `<label style="display:flex;align-items:baseline;gap:6px;cursor:pointer">` +
+        `<input type="checkbox" ${checked ? 'checked' : ''}>` +
+        `<span style="${checked ? 'opacity:0.5;text-decoration:line-through' : ''}">${renderedText}</span>` +
+        `</label>`;
+    }
     return md.render(raw).trim();
   }
 
@@ -635,6 +646,53 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'h') {
       e.preventDefault();
       app.openFindReplace();
+      return;
+    }
+
+    // Ctrl+B — bold
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+      e.preventDefault();
+      app.toggleBold();
+      return;
+    }
+
+    // Ctrl+I — italic
+    if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+      e.preventDefault();
+      app.toggleItalic();
+      return;
+    }
+
+    // Ctrl+K — insert link
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      app.insertLink();
+      return;
+    }
+
+    // Ctrl+P — print
+    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+      e.preventDefault();
+      app.printNote();
+      return;
+    }
+
+    // Ctrl+Home — jump to first line
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Home') {
+      e.preventDefault();
+      switchToRendered(idx);
+      switchToRaw(0);
+      document.getElementById('editor-pane').scrollTop = 0;
+      return;
+    }
+
+    // Ctrl+End — jump to last line
+    if ((e.ctrlKey || e.metaKey) && e.key === 'End') {
+      e.preventDefault();
+      switchToRendered(idx);
+      const last = lines.length - 1;
+      switchToRaw(last);
+      document.getElementById('editor-pane').scrollTop = 999999;
       return;
     }
 
@@ -1499,6 +1557,229 @@
     closeAllModals() {
       app.closeFind();
       app.closeStats();
+      app.closeNoteSearch();
+      app.closeLink();
+    },
+
+    // ── BOLD / ITALIC / LINK ────────────────────────────────────
+    _wrapSelection(before, after) {
+      const lineEl = getLineEl(activeLineIdx);
+      if (!lineEl) return;
+      const raw = lineEl.querySelector('.line-raw');
+      if (!raw || !lineEl.classList.contains('editing')) {
+        // Switch to raw first then wrap
+        switchToRaw(activeLineIdx);
+        requestAnimationFrame(() => app._wrapSelection(before, after));
+        return;
+      }
+      const start = raw.selectionStart;
+      const end   = raw.selectionEnd;
+      const sel   = raw.value.slice(start, end);
+      // Toggle: if already wrapped, unwrap
+      const val = raw.value;
+      if (val.slice(start - before.length, start) === before &&
+          val.slice(end, end + after.length) === after) {
+        const newVal = val.slice(0, start - before.length) + sel + val.slice(end + after.length);
+        raw.value = newVal;
+        raw.setSelectionRange(start - before.length, end - before.length);
+      } else {
+        const newVal = val.slice(0, start) + before + sel + after + val.slice(end);
+        raw.value = newVal;
+        raw.setSelectionRange(start + before.length, end + before.length);
+      }
+      lines[activeLineIdx] = raw.value;
+      computeFenceStates();
+      updateRendered(activeLineIdx);
+      scheduleAutosave();
+      pushUndo();
+    },
+
+    toggleBold()   { app._wrapSelection('**', '**'); },
+    toggleItalic() { app._wrapSelection('*', '*'); },
+
+    // ── INSERT LINK ─────────────────────────────────────────────
+    insertLink() {
+      const lineEl = getLineEl(activeLineIdx);
+      const raw = lineEl?.querySelector('.line-raw');
+      // Pre-fill text from selection
+      if (raw && lineEl.classList.contains('editing')) {
+        const sel = raw.value.slice(raw.selectionStart, raw.selectionEnd);
+        document.getElementById('link-text').value = sel || '';
+      } else {
+        document.getElementById('link-text').value = '';
+      }
+      document.getElementById('link-url').value = '';
+      document.getElementById('link-modal').classList.remove('hidden');
+      document.getElementById('modal-overlay').classList.remove('hidden');
+      requestAnimationFrame(() => {
+        const tf = document.getElementById('link-text');
+        tf.focus();
+        tf.select();
+      });
+    },
+
+    closeLink() {
+      document.getElementById('link-modal').classList.add('hidden');
+      document.getElementById('modal-overlay').classList.add('hidden');
+    },
+
+    commitLink() {
+      const text = document.getElementById('link-text').value || 'link';
+      const url  = document.getElementById('link-url').value || '#';
+      const md_link = `[${text}](${url})`;
+      app.closeLink();
+      switchToRaw(activeLineIdx);
+      requestAnimationFrame(() => {
+        const lineEl = getLineEl(activeLineIdx);
+        const raw = lineEl?.querySelector('.line-raw');
+        if (!raw) return;
+        const pos = raw.selectionStart;
+        const newVal = raw.value.slice(0, pos) + md_link + raw.value.slice(raw.selectionEnd);
+        raw.value = newVal;
+        raw.setSelectionRange(pos + md_link.length, pos + md_link.length);
+        lines[activeLineIdx] = newVal;
+        computeFenceStates();
+        updateRendered(activeLineIdx);
+        scheduleAutosave();
+        pushUndo();
+      });
+    },
+
+    // ── INSERT TASK LIST ────────────────────────────────────────
+    insertTaskList() {
+      const insert = ['- [ ] Task 1', '- [ ] Task 2', '- [ ] Task 3'];
+      lines.splice(activeLineIdx + 1, 0, ...insert);
+      rebuildFromIndex(activeLineIdx + 1);
+      requestAnimationFrame(() => switchToRaw(activeLineIdx + 1));
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── INSERT TIMESTAMP ────────────────────────────────────────
+    insertTimestamp() {
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const ts = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+      switchToRaw(activeLineIdx);
+      requestAnimationFrame(() => {
+        const lineEl = getLineEl(activeLineIdx);
+        const raw = lineEl?.querySelector('.line-raw');
+        if (!raw) return;
+        const pos = raw.selectionStart;
+        const newVal = raw.value.slice(0, pos) + ts + raw.value.slice(pos);
+        raw.value = newVal;
+        raw.setSelectionRange(pos + ts.length, pos + ts.length);
+        lines[activeLineIdx] = newVal;
+        computeFenceStates();
+        updateRendered(activeLineIdx);
+        scheduleAutosave();
+        pushUndo();
+      });
+    },
+
+    // ── COPY AS HTML ────────────────────────────────────────────
+    copyAsHtml() {
+      const fullMd = lines.join('\n');
+      const html = md.render(fullMd).replace(/<!--[\s\S]*?-->/g, '');
+      navigator.clipboard?.writeText(html).then(() => {
+        const ind = document.getElementById('autosave-indicator');
+        const prev = ind.textContent;
+        ind.textContent = '✓ HTML COPIED';
+        setTimeout(() => { ind.textContent = prev; }, 1800);
+      }).catch(() => alert('Clipboard write failed.'));
+    },
+
+    // ── FONT SIZE ───────────────────────────────────────────────
+    changeFontSize(delta) {
+      const root = document.documentElement;
+      const current = parseInt(getComputedStyle(root).getPropertyValue('--editor-font-size') || '14');
+      const next = Math.max(10, Math.min(28, current + delta));
+      root.style.setProperty('--editor-font-size', next + 'px');
+      document.getElementById('font-size-display').textContent = next + 'px';
+      try { localStorage.setItem('mv_fontsize', next); } catch (_) {}
+      // Resize all textareas
+      container.querySelectorAll('.line-raw').forEach(r => {
+        r.style.height = 'auto';
+        r.style.height = r.scrollHeight + 'px';
+      });
+    },
+
+    // ── TOGGLE LINE NUMBERS ─────────────────────────────────────
+    toggleLineNumbers() {
+      const on = document.body.classList.toggle('no-line-numbers');
+      try { localStorage.setItem('mv_linenumbers', on ? '0' : '1'); } catch (_) {}
+    },
+
+    // ── NOTE SEARCH ─────────────────────────────────────────────
+    openNoteSearch() {
+      document.getElementById('note-search-modal').classList.remove('hidden');
+      document.getElementById('modal-overlay').classList.remove('hidden');
+      const input = document.getElementById('note-search-input');
+      input.value = '';
+      document.getElementById('note-search-results').innerHTML = '';
+      requestAnimationFrame(() => input.focus());
+    },
+
+    closeNoteSearch() {
+      document.getElementById('note-search-modal').classList.add('hidden');
+      document.getElementById('modal-overlay').classList.add('hidden');
+    },
+
+    doNoteSearch() {
+      const term = document.getElementById('note-search-input').value.trim();
+      const resultsEl = document.getElementById('note-search-results');
+      if (!term) { resultsEl.innerHTML = ''; return; }
+
+      const results = [];
+      const termLower = term.toLowerCase();
+
+      window.notes.index.notes.forEach(({ id, name }) => {
+        const content = window.notes.loadNoteContent(id) || '';
+        const nameLower = name.toLowerCase();
+        const contentLower = content.toLowerCase();
+
+        if (nameLower.includes(termLower) || contentLower.includes(termLower)) {
+          // Find preview snippet around the match
+          let preview = '';
+          const ci = contentLower.indexOf(termLower);
+          if (ci !== -1) {
+            const start = Math.max(0, ci - 40);
+            const end = Math.min(content.length, ci + term.length + 60);
+            preview = (start > 0 ? '…' : '') +
+              escapeHtml(content.slice(start, ci)) +
+              `<mark>${escapeHtml(content.slice(ci, ci + term.length))}</mark>` +
+              escapeHtml(content.slice(ci + term.length, end)) +
+              (end < content.length ? '…' : '');
+          } else {
+            preview = escapeHtml(content.slice(0, 100));
+          }
+          results.push({ id, name, preview });
+        }
+      });
+
+      if (!results.length) {
+        resultsEl.innerHTML = `<div class="search-result-empty">No matches found</div>`;
+        return;
+      }
+
+      resultsEl.innerHTML = results.map(r => `
+        <div class="search-result-item" onclick="app._jumpToNote('${r.id}')">
+          <div class="search-result-name">${escapeHtml(r.name)}</div>
+          <div class="search-result-preview">${r.preview}</div>
+        </div>
+      `).join('');
+    },
+
+    _jumpToNote(id) {
+      app.closeNoteSearch();
+      window.notes.switchTo(id);
+    },
+
+    // ── PRINT ───────────────────────────────────────────────────
+    printNote() {
+      // Ensure all lines are rendered (not in raw edit mode)
+      for (let i = 0; i < lines.length; i++) switchToRendered(i);
+      requestAnimationFrame(() => window.print());
     },
 
     // ── WORD WRAP TOGGLE ────────────────────────────────────────
@@ -1792,6 +2073,43 @@ ${bodyHtml}
     }
     if (e.key === 'F11') { e.preventDefault(); app.toggleZen(); }
 
+    // New shortcuts
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.toggleBold();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'i' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.toggleItalic();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.insertLink();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'p' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.printNote();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Home' && !e.target.closest('.modal-box')) {
+      e.preventDefault();
+      switchToRendered(activeLineIdx);
+      switchToRaw(0);
+      document.getElementById('editor-pane').scrollTop = 0;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'End' && !e.target.closest('.modal-box')) {
+      e.preventDefault();
+      switchToRendered(activeLineIdx);
+      const last = lines.length - 1;
+      switchToRaw(last);
+      document.getElementById('editor-pane').scrollTop = 999999;
+    }
+
+    // Enter in link modal commits it
+    if (e.key === 'Enter' && e.target.closest('#link-modal')) {
+      e.preventDefault(); app.commitLink();
+    }
+    // Enter in note search: jump to first result
+    if (e.key === 'Enter' && e.target.id === 'note-search-input') {
+      const first = document.querySelector('.search-result-item');
+      if (first) first.click();
+    }
+
     // Handle Delete/Backspace on cross-line selection (mouse OR keyboard)
     if ((e.key === 'Delete' || e.key === 'Backspace') && (crossLineSelActive || ksel)) {
       const crossSel = getCrossLineSelection() || getKselAsCross();
@@ -1872,13 +2190,27 @@ ${bodyHtml}
     if (e.key === 'Escape') {
       app.closeFind();
       app.closeStats();
+      app.closeNoteSearch();
+      app.closeLink();
       crossLineSelActive = false;
       ksel = null;
       if (document.body.classList.contains('zen')) app.toggleZen();
     }
   });
 
-  // ── CLICK OUTSIDE MENU TO CLOSE ──────────────────────────────
+  // ── TASK LIST CHECKBOX CLICKS ────────────────────────────────
+  container.addEventListener('click', (e) => {
+    if (e.target.type !== 'checkbox') return;
+    const lineEl = e.target.closest('.editor-line');
+    if (!lineEl) return;
+    const idx = parseInt(lineEl.dataset.idx);
+    const checked = e.target.checked;
+    lines[idx] = lines[idx]
+      .replace(/^(\s*[-*+]\s)\[[ x]\]/, `$1[${checked ? 'x' : ' '}]`);
+    updateRendered(idx);
+    scheduleAutosave();
+    pushUndo();
+  });
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.menu-item')) {
       document.querySelectorAll('.dropdown').forEach(d => d.style.display = '');
@@ -2082,6 +2414,7 @@ ${bodyHtml}
         const row = document.createElement('div');
         row.className = 'note-entry' + (id === this.index.activeId ? ' active' : '');
         row.dataset.id = id;
+        row.draggable = true;
 
         const icon = document.createElement('div');
         icon.className = 'note-icon';
@@ -2115,8 +2448,40 @@ ${bodyHtml}
         row.appendChild(actions);
 
         row.addEventListener('click', () => this.switchTo(id));
-        // Double-click to rename
         row.addEventListener('dblclick', (e) => { e.stopPropagation(); this.startRename(id); });
+
+        // ── Drag-to-reorder ──────────────────────────────────
+        row.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData('text/plain', id);
+          e.dataTransfer.effectAllowed = 'move';
+          setTimeout(() => row.classList.add('dragging-note'), 0);
+        });
+        row.addEventListener('dragend', () => {
+          row.classList.remove('dragging-note');
+          list.querySelectorAll('.drag-over-note').forEach(el => el.classList.remove('drag-over-note'));
+        });
+        row.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          list.querySelectorAll('.drag-over-note').forEach(el => el.classList.remove('drag-over-note'));
+          row.classList.add('drag-over-note');
+        });
+        row.addEventListener('dragleave', () => {
+          row.classList.remove('drag-over-note');
+        });
+        row.addEventListener('drop', (e) => {
+          e.preventDefault();
+          row.classList.remove('drag-over-note');
+          const draggedId = e.dataTransfer.getData('text/plain');
+          if (draggedId === id) return;
+          const fromIdx = this.index.notes.findIndex(n => n.id === draggedId);
+          const toIdx   = this.index.notes.findIndex(n => n.id === id);
+          if (fromIdx === -1 || toIdx === -1) return;
+          const [moved] = this.index.notes.splice(fromIdx, 1);
+          this.index.notes.splice(toIdx, 0, moved);
+          this.saveIndex();
+          this.renderList();
+        });
 
         list.appendChild(row);
       });
@@ -2226,40 +2591,29 @@ ${bodyHtml}
       if (localStorage.getItem('mv_wordwrap') === '1') app.toggleWordWrap();
     } catch (_) {}
 
+    // Restore font size
+    try {
+      const fs = localStorage.getItem('mv_fontsize');
+      if (fs) {
+        const size = parseInt(fs);
+        if (size >= 10 && size <= 28) {
+          document.documentElement.style.setProperty('--editor-font-size', size + 'px');
+          document.getElementById('font-size-display').textContent = size + 'px';
+        }
+      }
+    } catch (_) {}
+
+    // Restore line numbers preference
+    try {
+      if (localStorage.getItem('mv_linenumbers') === '0') {
+        document.body.classList.add('no-line-numbers');
+      }
+    } catch (_) {}
+
     // Boot notes system — returns content of active note
     const content = notes.init();
 
-    const WELCOME = `# Welcome to MarkVoid
-
-Start typing your Markdown here. Each line renders independently.
-
-## Features
-
-- **Line-based editing** — click any line to edit it
-- **Live rendering** — Markdown renders when you leave a line
-- **Multiple notes** — manage notes in the left sidebar
-- **Themes** — choose from Retro Neon, Black, White, or Red
-- **Keyboard shortcuts** — Ctrl+F to find, Ctrl+H to replace
-- **Auto-save** — your work is saved automatically
-
-## Quick Tips
-
-> Use the menu bar for file operations, find/replace, and tools.
-
-\`\`\`js
-// Code blocks are syntax highlighted
-const msg = "Hello, MarkVoid!";
-console.log(msg);
-\`\`\`
-
-| Feature | Status |
-|---------|--------|
-| Live render | ✓ |
-| Notes sidebar | ✓ |
-| Autosave | ✓ |
-`;
-
-    setContent(content || WELCOME);
+    setContent(content || '');
     undoStack.push(lines.slice());
   }
 
