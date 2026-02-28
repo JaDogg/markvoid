@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MarkVoid — Line Editor</title>
   <link rel="stylesheet" href="styles.css">
-  <!-- markdown-it -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
-  <!-- highlight.js -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" id="hljs-theme">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
@@ -24,6 +22,9 @@
           <button onclick="app.newDocument()">New</button>
           <button onclick="app.uploadFile()">Upload .md</button>
           <button onclick="app.downloadFile()">Download .md</button>
+          <button onclick="app.exportHtml()">Export as HTML</button>
+          <div class="dropdown-sep"></div>
+          <button onclick="app.toggleZen()">Zen Mode <span class="kbd">F11</span></button>
         </div>
       </div>
 
@@ -32,8 +33,14 @@
         <div class="dropdown">
           <button onclick="app.undo()">Undo <span class="kbd">Ctrl+Z</span></button>
           <button onclick="app.redo()">Redo <span class="kbd">Ctrl+Y</span></button>
+          <div class="dropdown-sep"></div>
           <button onclick="app.openFind()">Find <span class="kbd">Ctrl+F</span></button>
           <button onclick="app.openFindReplace()">Find &amp; Replace <span class="kbd">Ctrl+H</span></button>
+          <div class="dropdown-sep"></div>
+          <button onclick="app.duplicateLine()">Duplicate Line <span class="kbd">Ctrl+D</span></button>
+          <button onclick="app.moveLineUp()">Move Line Up <span class="kbd">Alt+↑</span></button>
+          <button onclick="app.moveLineDown()">Move Line Down <span class="kbd">Alt+↓</span></button>
+          <button onclick="app.toggleComment()">Toggle Comment <span class="kbd">Ctrl+/</span></button>
         </div>
       </div>
 
@@ -41,7 +48,15 @@
         <button class="menu-trigger">Tools</button>
         <div class="dropdown">
           <button onclick="app.bulletify()">Bulletify</button>
+          <button onclick="app.indentLines()">Indent <span class="kbd">Ctrl+]</span></button>
+          <button onclick="app.outdentLines()">Outdent <span class="kbd">Ctrl+[</span></button>
+          <button onclick="app.sortLines()">Sort Lines</button>
+          <div class="dropdown-sep"></div>
+          <button onclick="app.insertTOC()">Insert Table of Contents</button>
           <button onclick="app.unicodeToAscii()">Unicode → ASCII</button>
+          <div class="dropdown-sep"></div>
+          <button onclick="app.showStats()">Word Count &amp; Stats</button>
+          <button onclick="app.toggleWordWrap()">Toggle Word Wrap <span class="kbd">Alt+Z</span></button>
         </div>
       </div>
 
@@ -86,6 +101,7 @@
     <span id="status-pos">Ln 1, Col 1</span>
     <span id="status-words">0 words</span>
     <span id="status-lines">0 lines</span>
+    <span id="status-wrap" style="margin-left:auto">WRAP: OFF</span>
   </footer>
 
   <!-- HIDDEN FILE INPUT -->
@@ -120,8 +136,20 @@
     </div>
   </div>
 
-  <div id="modal-overlay" class="hidden" onclick="app.closeFind()"></div>
+  <!-- STATS MODAL -->
+  <div id="stats-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title">STATS</span>
+        <button class="modal-close" onclick="app.closeStats()">✕</button>
+      </div>
+      <div class="modal-body" id="stats-body"></div>
+    </div>
+  </div>
+
+  <div id="modal-overlay" class="hidden" onclick="app.closeAllModals()"></div>
 
   <script src="app.js"></script>
 </body>
 </html>
+

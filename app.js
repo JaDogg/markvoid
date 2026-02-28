@@ -523,6 +523,55 @@
       app.selectAll();
       return;
     }
+
+    // Ctrl+D — duplicate line
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+      e.preventDefault();
+      app.duplicateLine();
+      return;
+    }
+
+    // Ctrl+/ — toggle comment
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+      e.preventDefault();
+      app.toggleComment();
+      return;
+    }
+
+    // Ctrl+] — indent
+    if ((e.ctrlKey || e.metaKey) && e.key === ']') {
+      e.preventDefault();
+      app.indentLines();
+      return;
+    }
+
+    // Ctrl+[ — outdent
+    if ((e.ctrlKey || e.metaKey) && e.key === '[') {
+      e.preventDefault();
+      app.outdentLines();
+      return;
+    }
+
+    // Alt+ArrowUp — move line up
+    if (e.altKey && e.key === 'ArrowUp') {
+      e.preventDefault();
+      app.moveLineUp();
+      return;
+    }
+
+    // Alt+ArrowDown — move line down
+    if (e.altKey && e.key === 'ArrowDown') {
+      e.preventDefault();
+      app.moveLineDown();
+      return;
+    }
+
+    // Alt+Z — toggle word wrap
+    if (e.altKey && e.key === 'z') {
+      e.preventDefault();
+      app.toggleWordWrap();
+      return;
+    }
   }
 
   // ── KEYBOARD SELECTION HELPERS ───────────────────────────────
@@ -1146,6 +1195,270 @@
       };
     },
 
+    // ── DUPLICATE LINE ──────────────────────────────────────────
+    duplicateLine() {
+      const idx = activeLineIdx;
+      const copy = lines[idx] || '';
+      lines.splice(idx + 1, 0, copy);
+      rebuildFromIndex(idx);
+      requestAnimationFrame(() => switchToRaw(idx + 1));
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── MOVE LINE UP ────────────────────────────────────────────
+    moveLineUp() {
+      const idx = activeLineIdx;
+      if (idx === 0) return;
+      [lines[idx - 1], lines[idx]] = [lines[idx], lines[idx - 1]];
+      rebuildFromIndex(idx - 1);
+      requestAnimationFrame(() => switchToRaw(idx - 1));
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── MOVE LINE DOWN ──────────────────────────────────────────
+    moveLineDown() {
+      const idx = activeLineIdx;
+      if (idx >= lines.length - 1) return;
+      [lines[idx], lines[idx + 1]] = [lines[idx + 1], lines[idx]];
+      rebuildFromIndex(idx);
+      requestAnimationFrame(() => switchToRaw(idx + 1));
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── TOGGLE COMMENT ──────────────────────────────────────────
+    toggleComment() {
+      const selected = getSelectedLines();
+      const targets = selected.length > 0 ? selected : [activeLineIdx];
+      const allCommented = targets.every(i => lines[i].trimStart().startsWith('<!-- ') && lines[i].trimEnd().endsWith(' -->'));
+      targets.forEach(i => {
+        if (allCommented) {
+          lines[i] = lines[i].replace(/^(\s*)<!-- (.*) -->$/, '$1$2');
+        } else {
+          lines[i] = '<!-- ' + lines[i] + ' -->';
+        }
+      });
+      rebuildFromIndex(Math.min(...targets));
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── INDENT / OUTDENT ────────────────────────────────────────
+    indentLines() {
+      const selected = getSelectedLines();
+      const targets = selected.length > 0 ? selected : [activeLineIdx];
+      targets.forEach(i => { lines[i] = '  ' + lines[i]; });
+      rebuildFromIndex(Math.min(...targets));
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    outdentLines() {
+      const selected = getSelectedLines();
+      const targets = selected.length > 0 ? selected : [activeLineIdx];
+      targets.forEach(i => { lines[i] = lines[i].replace(/^  /, '').replace(/^\t/, ''); });
+      rebuildFromIndex(Math.min(...targets));
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── SORT LINES ──────────────────────────────────────────────
+    sortLines() {
+      const selected = getSelectedLines();
+      if (selected.length > 1) {
+        // Sort only selected range
+        const min = Math.min(...selected);
+        const max = Math.max(...selected);
+        const slice = lines.slice(min, max + 1).sort((a, b) => a.localeCompare(b));
+        lines.splice(min, max - min + 1, ...slice);
+      } else {
+        // Sort whole document
+        lines.sort((a, b) => a.localeCompare(b));
+      }
+      buildAllLines();
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── INSERT TABLE OF CONTENTS ────────────────────────────────
+    insertTOC() {
+      // Collect headings
+      const headings = [];
+      lines.forEach((line, i) => {
+        const m = line.match(/^(#{1,6})\s+(.+)$/);
+        if (m) {
+          const level = m[1].length;
+          const text = m[2].trim();
+          const anchor = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+          headings.push({ level, text, anchor });
+        }
+      });
+
+      if (headings.length === 0) { alert('No headings found.'); return; }
+
+      const tocLines = ['<!-- TOC -->', ''];
+      headings.forEach(({ level, text, anchor }) => {
+        const indent = '  '.repeat(level - 1);
+        tocLines.push(`${indent}- [${text}](#${anchor})`);
+      });
+      tocLines.push('', '<!-- /TOC -->');
+
+      // Remove existing TOC if present
+      const startToc = lines.findIndex(l => l.trim() === '<!-- TOC -->');
+      const endToc = lines.findIndex(l => l.trim() === '<!-- /TOC -->');
+      if (startToc !== -1 && endToc !== -1 && endToc > startToc) {
+        lines.splice(startToc, endToc - startToc + 1, ...tocLines);
+      } else {
+        // Insert at top
+        lines.splice(0, 0, ...tocLines);
+      }
+
+      buildAllLines();
+      pushUndo();
+      scheduleAutosave();
+    },
+
+    // ── WORD COUNT & STATS ──────────────────────────────────────
+    showStats() {
+      const text = lines.join('\n');
+      const words = text.split(/\s+/).filter(w => w).length;
+      const chars = text.length;
+      const charsNoSpace = text.replace(/\s/g, '').length;
+      const paragraphs = text.split(/\n\n+/).filter(p => p.trim()).length;
+      const sentences = (text.match(/[.!?]+(\s|$)/g) || []).length;
+      const readingMins = Math.max(1, Math.round(words / 200));
+
+      const headings = lines.filter(l => /^#{1,6}\s/.test(l));
+      const codeBlocks = lines.filter(l => l.startsWith('```')).length / 2;
+      const links = (text.match(/\[.+?\]\(.+?\)/g) || []).length;
+      const images = (text.match(/!\[.+?\]\(.+?\)/g) || []).length;
+
+      const headingList = headings.map(h => {
+        const m = h.match(/^(#{1,6})\s+(.+)$/);
+        return m ? `<span class="h${m[1].length}">${'#'.repeat(m[1].length)} ${m[2]}</span>` : '';
+      }).join('');
+
+      const body = document.getElementById('stats-body');
+      body.innerHTML = `
+        <div class="stats-grid">
+          <div class="stat-cell"><span class="stat-label">Words</span><span class="stat-value">${words.toLocaleString()}</span></div>
+          <div class="stat-cell"><span class="stat-label">Characters</span><span class="stat-value">${chars.toLocaleString()}</span></div>
+          <div class="stat-cell"><span class="stat-label">Lines</span><span class="stat-value">${lines.length.toLocaleString()}</span></div>
+          <div class="stat-cell"><span class="stat-label">Paragraphs</span><span class="stat-value">${paragraphs.toLocaleString()}</span></div>
+          <div class="stat-cell"><span class="stat-label">Sentences</span><span class="stat-value">${sentences.toLocaleString()}</span></div>
+          <div class="stat-cell"><span class="stat-label">Chars (no spaces)</span><span class="stat-value">${charsNoSpace.toLocaleString()}</span></div>
+          <div class="stat-cell"><span class="stat-label">Links</span><span class="stat-value">${links}</span></div>
+          <div class="stat-cell"><span class="stat-label">Images</span><span class="stat-value">${images}</span></div>
+          <div class="stat-reading">
+            <div>
+              <div class="stat-label">Reading Time</div>
+              <div class="stat-value" style="font-size:16px">${readingMins} min${readingMins !== 1 ? 's' : ''}</div>
+            </div>
+            <div class="stat-reading-bar">
+              <div class="stat-reading-fill" style="width:${Math.min(100, (words / 1000) * 100)}%"></div>
+            </div>
+            <div style="font-size:11px;color:var(--fg-dim);white-space:nowrap">@ 200 wpm</div>
+          </div>
+        </div>
+        ${headings.length ? `<div class="stat-label" style="margin-bottom:4px">HEADINGS (${headings.length})</div><div class="stat-heading-list">${headingList}</div>` : ''}
+      `;
+
+      document.getElementById('stats-modal').classList.remove('hidden');
+      document.getElementById('modal-overlay').classList.remove('hidden');
+    },
+
+    closeStats() {
+      document.getElementById('stats-modal').classList.add('hidden');
+      document.getElementById('modal-overlay').classList.add('hidden');
+    },
+
+    closeAllModals() {
+      app.closeFind();
+      app.closeStats();
+    },
+
+    // ── WORD WRAP TOGGLE ────────────────────────────────────────
+    toggleWordWrap() {
+      const pane = document.getElementById('editor-pane');
+      const indicator = document.getElementById('status-wrap');
+      const on = pane.classList.toggle('word-wrap');
+      indicator.textContent = 'WRAP: ' + (on ? 'ON' : 'OFF');
+      indicator.className = on ? 'on' : '';
+      try { localStorage.setItem('mv_wordwrap', on ? '1' : '0'); } catch (_) {}
+    },
+
+    // ── ZEN MODE ────────────────────────────────────────────────
+    toggleZen() {
+      document.body.classList.toggle('zen');
+    },
+
+    // ── EXPORT HTML ─────────────────────────────────────────────
+    exportHtml() {
+      const fullMd = lines.join('\n');
+      const bodyHtml = md.render(fullMd);
+      const theme = document.body.getAttribute('data-theme') || 'retro-neon';
+      const noteName = (window.notes?.index?.notes?.find(n => n.id === window.notes?.index?.activeId)?.name) || 'document';
+
+      const themeStyles = {
+        'retro-neon': { bg: '#080808', fg: '#c8f542', accent: '#39ff14', code: '#0f1f0a', border: '#1e3a0a', font: 'Courier New, monospace' },
+        'black':      { bg: '#000',    fg: '#e0e0e0', accent: '#fff',    code: '#111',    border: '#222',    font: 'Courier New, monospace' },
+        'white':      { bg: '#fafafa', fg: '#111',    accent: '#000',    code: '#f0f0f0', border: '#ddd',    font: 'Courier New, monospace' },
+        'red':        { bg: '#0d0000', fg: '#ff6b6b', accent: '#ff2222', code: '#150505', border: '#3a0a0a', font: 'Courier New, monospace' },
+      };
+      const t = themeStyles[theme] || themeStyles['retro-neon'];
+
+      const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${noteName}</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"><\/script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: ${t.bg}; color: ${t.fg}; font-family: ${t.font}; font-size: 15px; line-height: 1.7; padding: 48px 24px; }
+  .content { max-width: 760px; margin: 0 auto; }
+  h1,h2,h3,h4,h5,h6 { color: ${t.accent}; margin: 1.4em 0 0.4em; line-height: 1.3; }
+  h1 { font-size: 2em; border-bottom: 1px solid ${t.border}; padding-bottom: 6px; }
+  h2 { font-size: 1.5em; }
+  p { margin: 0.7em 0; }
+  a { color: ${t.accent}; }
+  strong { color: ${t.accent}; }
+  blockquote { border-left: 3px solid ${t.accent}; padding-left: 16px; opacity: 0.8; margin: 1em 0; }
+  code { background: ${t.code}; padding: 2px 6px; border-radius: 3px; font-family: ${t.font}; font-size: 0.9em; }
+  pre { background: ${t.code}; border: 1px solid ${t.border}; border-left: 3px solid ${t.accent}; padding: 16px; overflow-x: auto; margin: 1em 0; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+  th, td { border: 1px solid ${t.border}; padding: 6px 12px; }
+  th { background: ${t.code}; color: ${t.accent}; }
+  img { max-width: 100%; }
+  hr { border: none; border-top: 1px solid ${t.border}; margin: 1.5em 0; }
+  ul, ol { padding-left: 24px; margin: 0.5em 0; }
+  li { margin: 2px 0; }
+</style>
+</head>
+<body>
+<div class="content">
+${bodyHtml}
+</div>
+<script>document.addEventListener('DOMContentLoaded', () => hljs.highlightAll());<\/script>
+</body>
+</html>`;
+
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      a.download = `${noteName}-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}.html`;
+      a.href = url;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+
     setTheme(theme, silent) {
       document.documentElement.setAttribute('data-theme', theme);
       document.body.setAttribute('data-theme', theme);
@@ -1325,6 +1638,28 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
       if (!e.target.closest('.modal-box')) { e.preventDefault(); app.selectAll(); }
     }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.duplicateLine();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === '/' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.toggleComment();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === ']' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.indentLines();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === '[' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.outdentLines();
+    }
+    if (e.altKey && e.key === 'ArrowUp' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.moveLineUp();
+    }
+    if (e.altKey && e.key === 'ArrowDown' && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.moveLineDown();
+    }
+    if (e.altKey && (e.key === 'z' || e.key === 'Z') && !e.target.closest('.modal-box')) {
+      e.preventDefault(); app.toggleWordWrap();
+    }
+    if (e.key === 'F11') { e.preventDefault(); app.toggleZen(); }
 
     // Handle Delete/Backspace on cross-line selection (mouse OR keyboard)
     if ((e.key === 'Delete' || e.key === 'Backspace') && (crossLineSelActive || ksel)) {
@@ -1403,7 +1738,13 @@
       }
     }
 
-    if (e.key === 'Escape') { app.closeFind(); crossLineSelActive = false; ksel = null; }
+    if (e.key === 'Escape') {
+      app.closeFind();
+      app.closeStats();
+      crossLineSelActive = false;
+      ksel = null;
+      if (document.body.classList.contains('zen')) app.toggleZen();
+    }
   });
 
   // ── CLICK OUTSIDE MENU TO CLOSE ──────────────────────────────
@@ -1747,6 +2088,11 @@
     try {
       const theme = localStorage.getItem('mv_theme');
       if (theme) app.setTheme(theme, true);
+    } catch (_) {}
+
+    // Restore word wrap
+    try {
+      if (localStorage.getItem('mv_wordwrap') === '1') app.toggleWordWrap();
     } catch (_) {}
 
     // Boot notes system — returns content of active note
