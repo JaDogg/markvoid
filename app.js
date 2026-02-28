@@ -59,59 +59,76 @@
     fenceStates = [];
     let inFence = false;
     let fenceLang = '';
+    let fenceStart = -1;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      fenceStates.push({ inFence, fenceLang });
+      fenceStates.push({ inFence, fenceLang, fenceStart });
       if (line.startsWith('```')) {
         if (!inFence) {
           inFence = true;
           fenceLang = line.slice(3).trim();
+          fenceStart = i;
         } else {
           inFence = false;
           fenceLang = '';
+          fenceStart = -1;
         }
       }
     }
   }
 
-  // ── RENDER A SINGLE LINE ─────────────────────────────────────
-  function renderLine(idx) {
-    const raw = lines[idx] || '';
-    // Determine context: are we inside a fence?
-    const state = fenceStates[idx] || { inFence: false };
+  // Return the full range [start, end] of the fence block containing line idx.
+  // Returns null if idx is not inside or on a fence delimiter.
+  function getFenceRange(idx) {
+    computeFenceStates();
+    const st = fenceStates[idx];
+    if (!st) return null;
+    // Either the line is the opening ``` line, or it's inside a fence
+    const isOpening = lines[idx].startsWith('```') && !st.inFence;
+    const isInside  = st.inFence;
+    const isClosing = lines[idx].startsWith('```') && st.inFence;
 
-    let html;
-    if (state.inFence || raw.startsWith('```')) {
-      // Render as a code block chunk: wrap in pre/code for the fence
-      // But we do full fence rendering via multi-line context trick
-      html = md.renderInline(raw) || '';
-      // For fence opening/closing lines, render the whole block context later
-      // For now just show raw in styled span
-      html = `<span style="color:var(--fg-dim)">${escapeHtml(raw)}</span>`;
-    } else {
-      // Render full inline md for the line
-      // We use a full block render then strip wrapper <p> for inline lines
-      const rendered = md.render(raw);
-      html = stripOuterP(rendered);
+    if (!isOpening && !isInside && !isClosing) return null;
+
+    // Find the opening line
+    let start = isOpening ? idx : st.fenceStart;
+    if (start < 0) return null;
+
+    // Find the closing line
+    let end = -1;
+    for (let i = start + 1; i < lines.length; i++) {
+      if (lines[i].startsWith('```')) { end = i; break; }
     }
+    if (end < 0) end = lines.length - 1; // unclosed fence
 
-    return html || '';
+    return { start, end };
   }
 
+  // ── RENDER A SINGLE LINE ─────────────────────────────────────
   // Render a line using block-level markdown (better for headings, lists, etc.)
   function renderLineBlock(idx) {
     const raw = lines[idx] || '';
+    computeFenceStates();
     const state = fenceStates[idx] || { inFence: false };
+
+    // Opening ``` line
+    if (raw.startsWith('```') && !state.inFence) {
+      const lang = raw.slice(3).trim();
+      return `<span class="fence-open">\`\`\`${escapeHtml(lang)}</span>`;
+    }
+    // Closing ``` line
+    if (raw.startsWith('```') && state.inFence) {
+      return `<span class="fence-close">\`\`\`</span>`;
+    }
+    // Inside fence — preserve whitespace, no markdown parsing
     if (state.inFence) {
-      return `<span class="in-fence">${escapeHtml(raw)}</span>`;
+      // Empty line inside fence: render as blank preserving height
+      if (raw === '') return `<span class="fence-line"> </span>`;
+      return `<span class="fence-line">${escapeHtml(raw)}</span>`;
     }
-    if (raw.startsWith('```')) {
-      // Opening or closing fence — show styled
-      return `<span style="color:var(--accent2);opacity:0.7">${escapeHtml(raw)}</span>`;
-    }
+    // Normal markdown line
     if (!raw.trim()) return '';
-    const rendered = md.render(raw);
-    return rendered.trim();
+    return md.render(raw).trim();
   }
 
   function stripOuterP(html) {
@@ -129,6 +146,24 @@
     for (let i = 0; i < lines.length; i++) {
       const el = createLineEl(i);
       container.appendChild(el);
+    }
+    // Apply fence position classes to all lines
+    applyAllFenceClasses();
+  }
+
+  function applyAllFenceClasses() {
+    computeFenceStates();
+    for (let i = 0; i < lines.length; i++) {
+      const lineEl = getLineEl(i);
+      if (!lineEl) continue;
+      const state = fenceStates[i] || { inFence: false };
+      const raw = lines[i] || '';
+      const isOpenFence  = raw.startsWith('```') && !state.inFence;
+      const isCloseFence = raw.startsWith('```') && state.inFence;
+      const isInsideFence = state.inFence;
+      lineEl.classList.toggle('fence-top',    isOpenFence);
+      lineEl.classList.toggle('fence-mid',    isInsideFence);
+      lineEl.classList.toggle('fence-bottom', isCloseFence);
     }
   }
 
@@ -177,6 +212,7 @@
       autoResize();
       lines[idx] = raw.value;
       computeFenceStates();
+      applyAllFenceClasses();
       updateRendered(idx);
       scheduleAutosave();
       pushUndo();
@@ -189,7 +225,23 @@
     });
 
     raw.addEventListener('blur', () => {
-      switchToRendered(idx);
+      // Delay to let the next focus event fire first
+      setTimeout(() => {
+        const focused = document.activeElement;
+        const focusedLineEl = focused?.closest?.('.editor-line');
+        // If focus moved to another line in the same fence, don't close
+        if (focusedLineEl) {
+          const focusedIdx = parseInt(focusedLineEl.dataset.idx);
+          const myRange = getFenceRange(idx);
+          const theirRange = getFenceRange(focusedIdx);
+          if (myRange && theirRange &&
+              myRange.start === theirRange.start &&
+              myRange.end === theirRange.end) {
+            return; // still inside the same fence block
+          }
+        }
+        switchToRendered(idx);
+      }, 0);
     });
 
     raw.addEventListener('keydown', (e) => {
@@ -241,6 +293,19 @@
   function updateRendered(idx) {
     const lineEl = getLineEl(idx);
     if (!lineEl) return;
+    computeFenceStates();
+    const state = fenceStates[idx] || { inFence: false };
+    const raw = lines[idx] || '';
+
+    // Apply fence position classes
+    const isOpenFence  = raw.startsWith('```') && !state.inFence;
+    const isCloseFence = raw.startsWith('```') && state.inFence;
+    const isInsideFence = state.inFence && !isCloseFence;
+
+    lineEl.classList.toggle('fence-top',    isOpenFence);
+    lineEl.classList.toggle('fence-mid',    isInsideFence);
+    lineEl.classList.toggle('fence-bottom', isCloseFence);
+
     const rendered = lineEl.querySelector('.line-rendered');
     const html = renderLineBlock(idx);
     rendered.innerHTML = html || '';
@@ -248,25 +313,81 @@
     else rendered.classList.remove('empty');
   }
 
-  function switchToRaw(idx) {
+  // Re-render all lines in the fence block containing idx (if any)
+  function updateFenceBlock(idx) {
+    const range = getFenceRange(idx);
+    if (!range) { updateRendered(idx); return; }
+    for (let i = range.start; i <= range.end; i++) {
+      updateRendered(i);
+    }
+  }
+
+  // Switch all lines in a fence block to raw editing mode
+  function openFenceForEdit(idx) {
+    const range = getFenceRange(idx);
+    if (!range) { switchToRaw(idx); return; }
+    // De-render all lines in the fence block (show as raw textareas)
+    for (let i = range.start; i <= range.end; i++) {
+      const lineEl = getLineEl(i);
+      if (!lineEl) continue;
+      lineEl.classList.add('editing', 'fence-editing');
+      const rawEl = lineEl.querySelector('.line-raw');
+      rawEl.value = lines[i] || '';
+      rawEl.style.height = 'auto';
+      rawEl.style.height = rawEl.scrollHeight + 'px';
+    }
     setActiveLine(idx);
-    const lineEl = getLineEl(idx);
-    if (!lineEl) return;
-    lineEl.classList.add('editing');
-    const raw = lineEl.querySelector('.line-raw');
-    raw.value = lines[idx] || '';
-    raw.focus();
-    // auto-resize
-    raw.style.height = 'auto';
-    raw.style.height = raw.scrollHeight + 'px';
+    // Focus the target line
+    const targetEl = getLineEl(idx);
+    if (targetEl) targetEl.querySelector('.line-raw').focus();
+  }
+
+  // Close all raw editing in a fence block, re-render all
+  function closeFenceForEdit(fenceIdx) {
+    const range = getFenceRange(fenceIdx);
+    if (!range) { switchToRendered(fenceIdx); return; }
+    for (let i = range.start; i <= range.end; i++) {
+      const lineEl = getLineEl(i);
+      if (!lineEl) continue;
+      lineEl.classList.remove('editing', 'fence-editing');
+    }
+    computeFenceStates();
+    for (let i = range.start; i <= range.end; i++) {
+      updateRendered(i);
+    }
+  }
+
+  function switchToRaw(idx) {
+    computeFenceStates();
+    const range = getFenceRange(idx);
+    if (range) {
+      openFenceForEdit(idx);
+    } else {
+      setActiveLine(idx);
+      const lineEl = getLineEl(idx);
+      if (!lineEl) return;
+      lineEl.classList.add('editing');
+      lineEl.classList.remove('fence-editing');
+      const raw = lineEl.querySelector('.line-raw');
+      raw.value = lines[idx] || '';
+      raw.focus();
+      raw.style.height = 'auto';
+      raw.style.height = raw.scrollHeight + 'px';
+    }
   }
 
   function switchToRendered(idx) {
-    const lineEl = getLineEl(idx);
-    if (!lineEl) return;
-    lineEl.classList.remove('editing');
     computeFenceStates();
-    updateRendered(idx);
+    const range = getFenceRange(idx);
+    if (range) {
+      closeFenceForEdit(idx);
+    } else {
+      const lineEl = getLineEl(idx);
+      if (!lineEl) return;
+      lineEl.classList.remove('editing', 'fence-editing');
+      computeFenceStates();
+      updateRendered(idx);
+    }
   }
 
   function setActiveLine(idx) {
@@ -728,6 +849,7 @@
       const el = createLineEl(i);
       container.appendChild(el);
     }
+    applyAllFenceClasses();
     updateGutterNumbers();
     updateStatusBar();
   }

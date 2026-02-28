@@ -1183,3 +1183,105 @@ body.zen::after {
 [data-theme="amber"] .editor-line.active {
   box-shadow: inset 0 0 20px rgba(255,204,0,0.03);
 }
+
+/* ============================================================
+   FENCE BLOCK STYLING
+   ============================================================ */
+
+/* Opening ``` line — top border + left + right, top radius */
+.editor-line.fence-top {
+  background: var(--code-bg);
+  border-left: 1px solid var(--border-bright) !important;
+  border-right: 1px solid var(--border-bright);
+  border-top: 1px solid var(--border-bright);
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  margin: 8px 8px 0 8px;
+}
+
+/* Lines inside the fence — left + right border only */
+.editor-line.fence-mid {
+  background: var(--code-bg);
+  border-left: 1px solid var(--border-bright) !important;
+  border-right: 1px solid var(--border-bright);
+  border-top: none;
+  border-bottom: none;
+  margin: 0 8px;
+}
+
+/* Closing ``` line — bottom border, bottom radius */
+.editor-line.fence-bottom {
+  background: var(--code-bg);
+  border-left: 1px solid var(--border-bright) !important;
+  border-right: 1px solid var(--border-bright);
+  border-top: none;
+  border-bottom: 1px solid var(--border-bright);
+  border-radius: 0 0 3px 3px;
+  margin: 0 8px 8px 8px;
+}
+
+/* Remove active/hover background inside fences — code-bg takes over */
+.editor-line.fence-top:hover,
+.editor-line.fence-mid:hover,
+.editor-line.fence-bottom:hover,
+.editor-line.fence-top.active,
+.editor-line.fence-mid.active,
+.editor-line.fence-bottom.active {
+  background: var(--code-bg);
+}
+
+/* Active line indicator still shows on fence lines */
+.editor-line.fence-top.active,
+.editor-line.fence-mid.active,
+.editor-line.fence-bottom.active {
+  border-left-color: var(--accent) !important;
+}
+
+/* Fence rendered text — preserve whitespace, monospace */
+.fence-open,
+.fence-close {
+  display: block;
+  color: var(--accent2);
+  opacity: 0.6;
+  font-size: 12px;
+  letter-spacing: 1px;
+  white-space: pre;
+  font-family: var(--font-body);
+}
+
+.fence-line {
+  display: block;
+  white-space: pre;
+  font-family: var(--font-body);
+  color: var(--fg);
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+/* Raw textarea inside fence — also preserve whitespace */
+.editor-line.fence-top .line-raw,
+.editor-line.fence-mid .line-raw,
+.editor-line.fence-bottom .line-raw {
+  white-space: pre;
+  font-family: var(--font-body);
+  tab-size: 2;
+  color: var(--fg);
+}
+
+.editor-line.fence-top .line-raw {
+  color: var(--accent2);
+  opacity: 0.8;
+}
+
+.editor-line.fence-bottom .line-raw {
+  color: var(--accent2);
+  opacity: 0.8;
+}
+
+/* Gutter in fence blocks — subtler */
+.editor-line.fence-top .line-gutter,
+.editor-line.fence-mid .line-gutter,
+.editor-line.fence-bottom .line-gutter {
+  color: var(--fg-dim);
+  opacity: 0.5;
+}
