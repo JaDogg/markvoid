@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="retro-neon">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MarkVoid — Line Editor</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- markdown-it -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/13.0.2/markdown-it.min.js"></script>
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" id="hljs-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+
+  <!-- MENU BAR -->
+  <nav id="menubar">
+    <div class="brand">MARKVOID</div>
+    <div class="menus">
+
+      <div class="menu-item">
+        <button class="menu-trigger">File</button>
+        <div class="dropdown">
+          <button onclick="app.newDocument()">New</button>
+          <button onclick="app.uploadFile()">Upload .md</button>
+          <button onclick="app.downloadFile()">Download .md</button>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <button class="menu-trigger">Edit</button>
+        <div class="dropdown">
+          <button onclick="app.undo()">Undo <span class="kbd">Ctrl+Z</span></button>
+          <button onclick="app.redo()">Redo <span class="kbd">Ctrl+Y</span></button>
+          <button onclick="app.openFind()">Find <span class="kbd">Ctrl+F</span></button>
+          <button onclick="app.openFindReplace()">Find &amp; Replace <span class="kbd">Ctrl+H</span></button>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <button class="menu-trigger">Tools</button>
+        <div class="dropdown">
+          <button onclick="app.bulletify()">Bulletify</button>
+          <button onclick="app.unicodeToAscii()">Unicode → ASCII</button>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <button class="menu-trigger">Theme</button>
+        <div class="dropdown">
+          <button onclick="app.setTheme('retro-neon')" data-theme-opt="retro-neon">⬡ Retro Neon</button>
+          <button onclick="app.setTheme('black')" data-theme-opt="black">● Black</button>
+          <button onclick="app.setTheme('white')" data-theme-opt="white">○ White</button>
+          <button onclick="app.setTheme('red')" data-theme-opt="red">◆ Red</button>
+        </div>
+      </div>
+
+    </div>
+    <div id="autosave-indicator" class="saved">● SAVED</div>
+  </nav>
+
+  <!-- EDITOR PANE -->
+  <main id="editor-pane">
+    <div id="line-container"></div>
+  </main>
+
+  <!-- STATUS BAR -->
+  <footer id="statusbar">
+    <span id="status-pos">Ln 1, Col 1</span>
+    <span id="status-words">0 words</span>
+    <span id="status-lines">0 lines</span>
+  </footer>
+
+  <!-- HIDDEN FILE INPUT -->
+  <input type="file" id="file-input" accept=".md" style="display:none">
+
+  <!-- FIND / REPLACE MODAL -->
+  <div id="find-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-title">Find</span>
+        <button class="modal-close" onclick="app.closeFind()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field-row">
+          <label>Find</label>
+          <input type="text" id="find-input" placeholder="Search…">
+        </div>
+        <div class="field-row" id="replace-row" style="display:none">
+          <label>Replace</label>
+          <input type="text" id="replace-input" placeholder="Replace with…">
+        </div>
+        <div class="options-row">
+          <label><input type="checkbox" id="opt-case"> Case sensitive</label>
+          <label><input type="checkbox" id="opt-regex"> Regex</label>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" onclick="app.findHighlight()">Highlight All</button>
+          <button class="btn-secondary" id="replace-one-btn" style="display:none" onclick="app.replaceOne()">Replace</button>
+          <button class="btn-secondary" id="replace-all-btn" style="display:none" onclick="app.replaceAll()">Replace All</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-overlay" class="hidden" onclick="app.closeFind()"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
