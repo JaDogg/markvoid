@@ -59,10 +59,27 @@
     <div id="autosave-indicator" class="saved">● SAVED</div>
   </nav>
 
+  <!-- BODY WRAPPER (sidebar + editor) -->
+  <div id="body-wrap">
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar">
+    <div id="sidebar-header">
+      <span id="sidebar-title">NOTES</span>
+      <button id="btn-new-note" title="New note" onclick="notes.createNote()">＋</button>
+    </div>
+    <div id="notes-list"></div>
+  </aside>
+
+  <!-- RESIZE HANDLE -->
+  <div id="sidebar-resize"></div>
+
   <!-- EDITOR PANE -->
   <main id="editor-pane">
     <div id="line-container"></div>
   </main>
+
+  </div><!-- /body-wrap -->
 
   <!-- STATUS BAR -->
   <footer id="statusbar">

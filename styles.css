@@ -146,6 +146,168 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
+}
+
+#body-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── SIDEBAR ─────────────────────────────────────────────── */
+#sidebar {
+  flex: 0 0 200px;
+  width: 200px;
+  min-width: 120px;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+}
+
+#sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 12px;
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#sidebar-title {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--fg-dim);
+}
+
+#btn-new-note {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color 0.15s;
+  font-family: var(--font-ui);
+}
+
+#btn-new-note:hover { color: var(--accent); }
+
+#notes-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 0;
+}
+
+/* Note entry row */
+.note-entry {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: 30px;
+  padding: 0 4px 0 0;
+  cursor: pointer;
+  position: relative;
+  border-left: 2px solid transparent;
+  transition: background 0.1s, border-color 0.1s;
+  user-select: none;
+}
+
+.note-entry:hover { background: var(--line-gutter); }
+
+.note-entry.active {
+  border-left-color: var(--accent);
+  background: var(--line-gutter);
+}
+
+.note-entry.active .note-name {
+  color: var(--accent);
+  text-shadow: var(--glow-text);
+}
+
+.note-icon {
+  width: 28px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+
+.note-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-ui);
+  letter-spacing: 0.5px;
+  min-width: 0;
+}
+
+.note-name-input {
+  flex: 1;
+  background: var(--input-bg);
+  border: 1px solid var(--accent);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 1px 4px;
+  outline: none;
+  height: 22px;
+  min-width: 0;
+}
+
+.note-actions {
+  display: none;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.note-entry:hover .note-actions,
+.note-entry.active .note-actions {
+  display: flex;
+}
+
+.note-btn {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 3px 5px;
+  line-height: 1;
+  transition: color 0.1s, background 0.1s;
+  font-family: var(--font-ui);
+}
+
+.note-btn:hover { color: var(--accent); background: var(--selection); }
+.note-btn.del:hover { color: #ff5555; }
+
+/* Resize handle */
+#sidebar-resize {
+  flex: 0 0 4px;
+  width: 4px;
+  background: var(--border);
+  cursor: col-resize;
+  transition: background 0.15s;
+  position: relative;
+  z-index: 10;
+}
+
+#sidebar-resize:hover,
+#sidebar-resize.dragging {
+  background: var(--accent);
+  box-shadow: var(--glow);
 }
 
 #menubar {
@@ -182,6 +344,7 @@ body {
   overflow-x: hidden;
   background: var(--bg);
   position: relative;
+  min-width: 0;
 }
 
 #line-container {
@@ -202,6 +365,7 @@ body {
   color: var(--fg-dim);
   letter-spacing: 1px;
 }
+
 
 /* ============================================================
    MENU SYSTEM

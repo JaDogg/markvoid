@@ -1423,11 +1423,336 @@
     }
   });
 
+  // ── NOTES MANAGEMENT ────────────────────────────────────────
+  // Storage layout:
+  //   mv_notes_index  → { activeId, notes: [{id, name},...] }
+  //   mv_note_{id}    → { content, lastSaved }
+  //   mv_theme        → string
+
+  const NOTES_INDEX_KEY = 'mv_notes_index';
+  const NOTE_KEY = id => `mv_note_${id}`;
+  const VALID_NAME = /^[a-zA-Z0-9_ ]+$/;
+
+  const notes = {
+    index: { activeId: null, notes: [] }, // loaded from storage
+
+    // ── Load/Save index ──────────────────────────────────────
+    loadIndex() {
+      try {
+        const raw = localStorage.getItem(NOTES_INDEX_KEY);
+        if (raw) this.index = JSON.parse(raw);
+      } catch (_) {}
+      // Ensure always an array
+      if (!Array.isArray(this.index.notes)) this.index.notes = [];
+    },
+
+    saveIndex() {
+      localStorage.setItem(NOTES_INDEX_KEY, JSON.stringify(this.index));
+    },
+
+    saveNoteContent(id, content) {
+      localStorage.setItem(NOTE_KEY(id), JSON.stringify({ content, lastSaved: Date.now() }));
+    },
+
+    loadNoteContent(id) {
+      try {
+        const raw = localStorage.getItem(NOTE_KEY(id));
+        if (raw) return JSON.parse(raw).content || '';
+      } catch (_) {}
+      return '';
+    },
+
+    deleteNoteStorage(id) {
+      localStorage.removeItem(NOTE_KEY(id));
+    },
+
+    // ── Generate unique ID ───────────────────────────────────
+    genId() {
+      return 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    },
+
+    // ── Save current editor content to active note ───────────
+    flushCurrent() {
+      if (!this.index.activeId) return;
+      const content = lines.join('\n');
+      this.saveNoteContent(this.index.activeId, content);
+    },
+
+    // ── Switch to a note ─────────────────────────────────────
+    switchTo(id) {
+      if (id === this.index.activeId) return;
+
+      // Save current before switching
+      this.flushCurrent();
+
+      this.index.activeId = id;
+      this.saveIndex();
+
+      const content = this.loadNoteContent(id);
+      setContent(content || '');
+
+      this.renderList();
+    },
+
+    // ── Create new note ──────────────────────────────────────
+    createNote(name) {
+      name = (name || 'Untitled').trim();
+      if (!VALID_NAME.test(name)) name = 'Untitled';
+
+      // Deduplicate name
+      const existing = this.index.notes.map(n => n.name);
+      let finalName = name;
+      let count = 2;
+      while (existing.includes(finalName)) {
+        finalName = `${name} ${count++}`;
+      }
+
+      const id = this.genId();
+      this.index.notes.push({ id, name: finalName });
+
+      // Save current, switch to new
+      this.flushCurrent();
+      this.index.activeId = id;
+      this.saveIndex();
+      this.saveNoteContent(id, '');
+      setContent('');
+      this.renderList();
+
+      // Immediately put new note into rename mode
+      requestAnimationFrame(() => this.startRename(id));
+    },
+
+    // ── Delete a note ────────────────────────────────────────
+    deleteNote(id) {
+      const entry = this.index.notes.find(n => n.id === id);
+      if (!entry) return;
+      if (!confirm(`Delete note "${entry.name}"?`)) return;
+
+      this.deleteNoteStorage(id);
+      this.index.notes = this.index.notes.filter(n => n.id !== id);
+
+      if (this.index.activeId === id) {
+        // Switch to another note
+        const next = this.index.notes[0];
+        if (next) {
+          this.index.activeId = next.id;
+          const content = this.loadNoteContent(next.id);
+          setContent(content || '');
+        } else {
+          // No notes left — create a default one
+          this.index.activeId = null;
+          this.saveIndex();
+          this.renderList();
+          this.createNote('Untitled');
+          return;
+        }
+      }
+
+      this.saveIndex();
+      this.renderList();
+    },
+
+    // ── Start inline rename ───────────────────────────────────
+    startRename(id) {
+      const row = document.querySelector(`.note-entry[data-id="${id}"]`);
+      if (!row) return;
+      const nameEl = row.querySelector('.note-name');
+      if (!nameEl) return;
+
+      const current = this.index.notes.find(n => n.id === id)?.name || '';
+
+      // Replace name span with input
+      const input = document.createElement('input');
+      input.className = 'note-name-input';
+      input.value = current;
+      input.maxLength = 60;
+      nameEl.replaceWith(input);
+
+      // Hide action buttons during rename
+      row.querySelector('.note-actions').style.display = 'none';
+
+      input.focus();
+      input.select();
+
+      const commit = () => {
+        let val = input.value.trim().replace(/[^a-zA-Z0-9_ ]/g, '').trim();
+        if (!val) val = current;
+
+        // Deduplicate
+        const existing = this.index.notes.filter(n => n.id !== id).map(n => n.name);
+        let finalName = val;
+        let count = 2;
+        while (existing.includes(finalName)) finalName = `${val} ${count++}`;
+
+        const note = this.index.notes.find(n => n.id === id);
+        if (note) note.name = finalName;
+        this.saveIndex();
+        this.renderList();
+      };
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = current; input.blur(); }
+        // Filter invalid chars live
+        if (e.key.length === 1 && !VALID_NAME.test(e.key)) e.preventDefault();
+      });
+
+      input.addEventListener('blur', commit);
+    },
+
+    // ── Render the sidebar list ───────────────────────────────
+    renderList() {
+      const list = document.getElementById('notes-list');
+      if (!list) return;
+      list.innerHTML = '';
+
+      this.index.notes.forEach(({ id, name }) => {
+        const row = document.createElement('div');
+        row.className = 'note-entry' + (id === this.index.activeId ? ' active' : '');
+        row.dataset.id = id;
+
+        const icon = document.createElement('div');
+        icon.className = 'note-icon';
+        icon.textContent = '▸';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'note-name';
+        nameEl.textContent = name;
+        nameEl.title = name;
+
+        const actions = document.createElement('div');
+        actions.className = 'note-actions';
+
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'note-btn';
+        renameBtn.textContent = '✎';
+        renameBtn.title = 'Rename';
+        renameBtn.addEventListener('click', (e) => { e.stopPropagation(); this.startRename(id); });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'note-btn del';
+        delBtn.textContent = '✕';
+        delBtn.title = 'Delete';
+        delBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deleteNote(id); });
+
+        actions.appendChild(renameBtn);
+        actions.appendChild(delBtn);
+
+        row.appendChild(icon);
+        row.appendChild(nameEl);
+        row.appendChild(actions);
+
+        row.addEventListener('click', () => this.switchTo(id));
+        // Double-click to rename
+        row.addEventListener('dblclick', (e) => { e.stopPropagation(); this.startRename(id); });
+
+        list.appendChild(row);
+      });
+    },
+
+    // ── Boot ─────────────────────────────────────────────────
+    init() {
+      this.loadIndex();
+
+      if (this.index.notes.length === 0) {
+        // First run — migrate old single document if present
+        let migratedContent = '';
+        try {
+          const old = localStorage.getItem(STORAGE_KEY);
+          if (old) {
+            const parsed = JSON.parse(old);
+            migratedContent = parsed.content || '';
+            if (parsed.theme) app.setTheme(parsed.theme, true);
+          }
+        } catch (_) {}
+
+        const id = this.genId();
+        this.index.notes = [{ id, name: 'Untitled' }];
+        this.index.activeId = id;
+        this.saveNoteContent(id, migratedContent);
+        this.saveIndex();
+      }
+
+      // Ensure activeId is valid
+      if (!this.index.notes.find(n => n.id === this.index.activeId)) {
+        this.index.activeId = this.index.notes[0].id;
+        this.saveIndex();
+      }
+
+      this.renderList();
+
+      const content = this.loadNoteContent(this.index.activeId);
+      return content;
+    }
+  };
+
+  // Expose notes globally too
+  window.notes = notes;
+
+  // ── SIDEBAR RESIZE ───────────────────────────────────────────
+  (function initSidebarResize() {
+    const handle = document.getElementById('sidebar-resize');
+    const sidebar = document.getElementById('sidebar');
+    if (!handle || !sidebar) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startW = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+      dragging = true;
+      startX = e.clientX;
+      startW = sidebar.offsetWidth;
+      handle.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const delta = e.clientX - startX;
+      const newW = Math.max(120, Math.min(480, startW + delta));
+      sidebar.style.flex = `0 0 ${newW}px`;
+      sidebar.style.width = `${newW}px`;
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    });
+  })();
+
+  // ── PATCH saveDocument to flush through notes system ────────
+  // Override scheduleAutosave to also call notes.saveNoteContent
+  const _origSaveDocument = saveDocument;
+  function saveDocument() {
+    const content = lines.join('\n');
+    const theme = document.body.getAttribute('data-theme') || 'retro-neon';
+    if (notes.index.activeId) {
+      notes.saveNoteContent(notes.index.activeId, content);
+    }
+    // Also save theme
+    try { localStorage.setItem('mv_theme', theme); } catch (_) {}
+    setSaved();
+    lastSavedContent = content;
+  }
+
   // ── INIT ─────────────────────────────────────────────────────
   function init() {
-    loadDocument();
-    if (!lines.length || (lines.length === 1 && lines[0] === '')) {
-      const welcome = `# Welcome to MarkVoid
+    // Load theme first
+    try {
+      const theme = localStorage.getItem('mv_theme');
+      if (theme) app.setTheme(theme, true);
+    } catch (_) {}
+
+    // Boot notes system — returns content of active note
+    const content = notes.init();
+
+    const WELCOME = `# Welcome to MarkVoid
 
 Start typing your Markdown here. Each line renders independently.
 
@@ -1435,6 +1760,7 @@ Start typing your Markdown here. Each line renders independently.
 
 - **Line-based editing** — click any line to edit it
 - **Live rendering** — Markdown renders when you leave a line
+- **Multiple notes** — manage notes in the left sidebar
 - **Themes** — choose from Retro Neon, Black, White, or Red
 - **Keyboard shortcuts** — Ctrl+F to find, Ctrl+H to replace
 - **Auto-save** — your work is saved automatically
@@ -1452,13 +1778,11 @@ console.log(msg);
 | Feature | Status |
 |---------|--------|
 | Live render | ✓ |
+| Notes sidebar | ✓ |
 | Autosave | ✓ |
-| Themes | ✓ |
 `;
-      setContent(welcome);
-    }
 
-    // Push initial undo state
+    setContent(content || WELCOME);
     undoStack.push(lines.slice());
   }
 
